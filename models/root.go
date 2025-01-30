@@ -1,6 +1,8 @@
 package models
 
 import (
+	"fmt"
+	"os"
 	"time"
 
 	"github.com/charmbracelet/bubbles/help"
@@ -9,25 +11,20 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/mistakenelf/teacup/statusbar"
 )
 
-type view uint
+type view string
 type progressTick struct{}
 
 var (
-	focusedModelStyle = lipgloss.NewStyle().
-				BorderStyle(lipgloss.ThickBorder()).
-				BorderForeground(lipgloss.Color("69"))
-	modelStyle = lipgloss.NewStyle().
-			BorderStyle(lipgloss.NormalBorder()).
-			BorderForeground(lipgloss.Color("69"))
 	progressPercentPerTick = 0.10
 	progressTickDuration   = 100 * time.Millisecond
 )
 
 const (
-	treeView view = iota
-	detailsView
+	treeView    view = "tree"
+	detailsView      = "details"
 )
 
 type rootKeymap struct {
@@ -69,17 +66,24 @@ type RootModel struct {
 	help            help.Model
 	keymap          rootKeymap
 	viewportKeymap  viewportKeymaps
-	progress        tea.Model
+	progress        progress.Model
 	showProgress    bool
+	status          statusbar.Model
+	hostname        string
 }
 
-func NewRootModel() *RootModel {
+func NewRootModel() (*RootModel, error) {
 	details := viewport.New(0, 0)
 	tree := viewport.New(0, 0)
 
 	viewportKeymap := newViewportKeymaps()
 	viewportKeymap.reassignViewportKeymap(&tree.KeyMap)
 	viewportKeymap.reassignViewportKeymap(&details.KeyMap)
+
+	hostname, err := os.Hostname()
+	if err != nil {
+		return nil, fmt.Errorf("getting hostname from os: %w", err)
+	}
 
 	m := &RootModel{
 		Tree:            NewTreeModel(),
@@ -108,8 +112,28 @@ func NewRootModel() *RootModel {
 		viewportKeymap: viewportKeymap,
 		progress:       progress.New(progress.WithDefaultScaledGradient()),
 		showProgress:   true,
+		status: statusbar.New(
+			statusbar.ColorConfig{
+				Foreground: lipgloss.AdaptiveColor{Dark: "#ffffff", Light: "#ffffff"},
+				Background: lipgloss.AdaptiveColor{Light: string(foregroundColor), Dark: string(foregroundColor)},
+			},
+			statusbar.ColorConfig{
+				Foreground: lipgloss.AdaptiveColor{Light: "#ffffff", Dark: "#ffffff"},
+				Background: lipgloss.AdaptiveColor{Light: "#3c3836", Dark: "#3c3836"},
+			},
+			statusbar.ColorConfig{
+				Foreground: lipgloss.AdaptiveColor{Light: "#ffffff", Dark: "#ffffff"},
+				Background: lipgloss.AdaptiveColor{Light: "#A550DF", Dark: "#A550DF"},
+			},
+			statusbar.ColorConfig{
+				Foreground: lipgloss.AdaptiveColor{Light: "#ffffff", Dark: "#ffffff"},
+				Background: lipgloss.AdaptiveColor{Light: string(lambdaPurple), Dark: string(lambdaPurple)},
+			},
+		),
+		hostname: hostname,
 	}
-	return m
+	m.status.SetContent("one", "two", "three", "four")
+	return m, nil
 }
 
 func (m *RootModel) Init() tea.Cmd {
@@ -123,14 +147,16 @@ func (m *RootModel) Init() tea.Cmd {
 	)
 }
 
-func (m *RootModel) updateViewports(msg tea.Msg) tea.Cmd {
+func (m *RootModel) activeViewport() *viewport.Model {
 	if m.view == treeView {
-		newViewport, cmd := m.treeViewport.Update(msg)
-		m.treeViewport = newViewport
-		return cmd
+		return &m.treeViewport
 	}
-	newDetailsViewport, cmd := m.detailsViewport.Update(msg)
-	m.detailsViewport = newDetailsViewport
+	return &m.detailsViewport
+}
+
+func (m *RootModel) updateViewports(msg tea.Msg) tea.Cmd {
+	newViewport, cmd := m.activeViewport().Update(msg)
+	*m.activeViewport() = newViewport
 	return cmd
 }
 
@@ -163,13 +189,14 @@ func (m *RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		m.width = msg.Width
 		if m.showProgress {
-			p := m.progress.(progress.Model)
+			p := m.progress
 			p.Width = m.width
 			m.progress = p
+			//cmds = append(cmds, m.image.SetSize(m.width-10, m.height-10))
 		}
 		m.resizeElements()
 	case progressTick:
-		p := m.progress.(progress.Model)
+		p := m.progress
 		if p.Percent() >= 1.0 {
 			m.showProgress = false
 		} else {
@@ -194,6 +221,13 @@ func (m *RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, cmd)
 	}
 
+	scrollPercent := m.activeViewport().ScrollPercent()
+	m.status.SetContent(
+		m.Tree.CurNode.Detail.Businfo,
+		m.hostname,
+		fmt.Sprintf("%d", int(scrollPercent*100))+"%",
+		string(m.view),
+	)
 	return m, tea.Batch(cmds...)
 }
 
@@ -226,6 +260,7 @@ func (m *RootModel) resizeElements() {
 		Width((width - m.treeStyle.GetWidth()))
 	m.detailsViewport.Height = m.detailsStyle.GetHeight()
 	m.detailsViewport.Width = m.detailsStyle.GetWidth()
+	m.status.SetSize(m.width)
 }
 
 func (m *RootModel) View() string {
@@ -261,6 +296,10 @@ func (m *RootModel) View() string {
 		m.treeStyle.Render(treeViewport),
 		m.detailsStyle.Render(detailsViewport),
 	)
-	s += "\n\n" + help
-	return s
+	return lipgloss.JoinVertical(
+		lipgloss.Top,
+		s,
+		help,
+		m.status.View(),
+	)
 }

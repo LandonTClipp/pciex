@@ -1,15 +1,18 @@
 package models
 
 import (
+	"fmt"
 	"time"
 
+	"github.com/LandonTClipp/pciex/pcie"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss/tree"
+	"gopkg.in/yaml.v2"
 )
 
 type Node struct {
 	Name   string
-	detail string
+	Detail pcie.Details
 	Parent *Node
 	// Idx is the index of Node in Parent's Children field.
 	Idx      int
@@ -17,10 +20,10 @@ type Node struct {
 	model    *TreeModel
 }
 
-func NewNode(name, detail string, parent *Node, model *TreeModel) *Node {
+func NewNode(name string, detail pcie.Details, parent *Node, model *TreeModel) *Node {
 	return &Node{
 		Name:     name,
-		detail:   detail,
+		Detail:   detail,
 		Parent:   parent,
 		children: Children{},
 		model:    model,
@@ -28,7 +31,11 @@ func NewNode(name, detail string, parent *Node, model *TreeModel) *Node {
 }
 
 func (n *Node) GetDetail() string {
-	return n.detail
+	out, err := yaml.Marshal(n.Detail)
+	if err != nil {
+		panic(fmt.Errorf("unmarshalling yaml: %w", err))
+	}
+	return string(out)
 }
 
 func (n *Node) RefreshDetail() tea.Cmd {
@@ -38,10 +45,10 @@ func (n *Node) RefreshDetail() tea.Cmd {
 	}
 }
 
-func (n *Node) AddChild(name, detail string) *Node {
+func (n *Node) AddChild(name string, detail pcie.Details) *Node {
 	child := &Node{
 		Name:   name,
-		detail: detail,
+		Detail: detail,
 		Parent: n,
 		model:  n.model,
 	}

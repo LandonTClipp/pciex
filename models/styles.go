@@ -10,14 +10,29 @@ import (
 )
 
 var (
-	itemStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("212"))
-	itemStyleSelected = lipgloss.NewStyle().Foreground(lipgloss.Color("229")).
-				Background(lipgloss.Color("57")).
+	foregroundColor         = lipgloss.Color("212")
+	foregroundColorSelected = lipgloss.Color("229")
+	backgroundColorSelected = lipgloss.Color("57")
+	borderColor             = lipgloss.Color("69")
+	treeColor               = lipgloss.Color("63")
+	lambdaPurple            = lipgloss.Color("#6124DF")
+)
+
+var (
+	itemStyle         = lipgloss.NewStyle().Foreground(foregroundColor)
+	itemStyleSelected = lipgloss.NewStyle().Foreground(foregroundColorSelected).
+				Background(backgroundColorSelected).
 				Bold(true)
-	viewportStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("212")).
+	viewportStyle = lipgloss.NewStyle().Foreground(foregroundColor).
 			Border(lipgloss.NormalBorder())
-	enumeratorStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("63")).MarginRight(1)
-	rootStyle       = itemStyle
+	enumeratorStyle   = lipgloss.NewStyle().Foreground(treeColor).MarginRight(1)
+	rootStyle         = itemStyle
+	focusedModelStyle = lipgloss.NewStyle().
+				BorderStyle(lipgloss.ThickBorder()).
+				BorderForeground(borderColor)
+	modelStyle = lipgloss.NewStyle().
+			BorderStyle(lipgloss.NormalBorder()).
+			BorderForeground(borderColor)
 )
 
 var nvidiaSMIExample string = `

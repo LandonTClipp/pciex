@@ -45,25 +45,6 @@ func NewTreeModel() *TreeModel {
 	return m
 }
 
-func NewTreeModelExample() *TreeModel {
-	m := NewTreeModel()
-	root := NewNode(
-		"Root Complex",
-		"Root Complex Detail",
-		nil,
-		m,
-	)
-	root.AddChild("NVIDIA H100 0", nvidiaSMIExample)
-	child2 := root.AddChild("PCIE Bridge", "Bridge Details")
-	child2.AddChild("NVIDIA H100 1", nvidiaSMIExample)
-	child2.AddChild("NVIDIA H100 2", nvidiaSMIExample)
-	child2.AddChild("NVIDIA H100 3", nvidiaSMIExample)
-
-	m.Root = root
-	m.CurNode = root.children[0]
-	return m
-}
-
 func (m *TreeModel) Init() tea.Cmd {
 	m.CurNode = m.Root.children[0]
 	return nil
@@ -139,6 +120,5 @@ func (m *TreeModel) View() string {
 		RootStyle(rootStyle).
 		ItemStyleFunc(itemStyleFunc).
 		Child(m.Root.children)
-
 	return t.String()
 }
