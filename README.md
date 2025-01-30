@@ -9,6 +9,12 @@ PCI Explorer is a PCIe topology explorer and visualizer. The generated tree can 
 This can be installed using:
 
 ```
+GOPROXY=direct go install github.com/LandonTClipp/pciex@latest
+```
+
+Or you may run it directly via:
+
+```
 GOPROXY=direct go run github.com/LandonTClipp/pciex@latest
 ```
 
