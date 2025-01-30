@@ -1,14 +1,18 @@
 package models
 
 import (
+	"time"
+
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
+	"github.com/charmbracelet/bubbles/progress"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
 
 type view uint
+type progressTick struct{}
 
 var (
 	focusedModelStyle = lipgloss.NewStyle().
@@ -17,6 +21,8 @@ var (
 	modelStyle = lipgloss.NewStyle().
 			BorderStyle(lipgloss.NormalBorder()).
 			BorderForeground(lipgloss.Color("69"))
+	progressPercentPerTick = 0.10
+	progressTickDuration   = 100 * time.Millisecond
 )
 
 const (
@@ -63,7 +69,8 @@ type RootModel struct {
 	help            help.Model
 	keymap          rootKeymap
 	viewportKeymap  viewportKeymaps
-	debug           bool
+	progress        tea.Model
+	showProgress    bool
 }
 
 func NewRootModel() *RootModel {
@@ -99,16 +106,21 @@ func NewRootModel() *RootModel {
 			),
 		},
 		viewportKeymap: viewportKeymap,
+		progress:       progress.New(progress.WithDefaultScaledGradient()),
+		showProgress:   true,
 	}
 	return m
 }
 
 func (m *RootModel) Init() tea.Cmd {
-	var cmds []tea.Cmd
-	cmds = append(cmds, m.Tree.Init())
-	cmds = append(cmds, m.detailsViewport.Init())
-
-	return tea.Batch(cmds...)
+	return tea.Batch(
+		m.Tree.Init(),
+		m.detailsViewport.Init(),
+		m.progress.Init(),
+		func() tea.Msg {
+			return progressTick{}
+		},
+	)
 }
 
 func (m *RootModel) updateViewports(msg tea.Msg) tea.Cmd {
@@ -145,16 +157,38 @@ func (m *RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, m.updateViewports(msg))
 		case key.Matches(msg, m.keymap.refresh):
 			cmds = append(cmds, m.Tree.CurNode.RefreshDetail())
-		case key.Matches(msg, m.keymap.debug):
-			m.debug = !m.debug
 		}
 
 	case tea.WindowSizeMsg:
 		m.height = msg.Height
 		m.width = msg.Width
+		if m.showProgress {
+			p := m.progress.(progress.Model)
+			p.Width = m.width
+			m.progress = p
+		}
 		m.resizeElements()
+	case progressTick:
+		p := m.progress.(progress.Model)
+		if p.Percent() >= 1.0 {
+			m.showProgress = false
+		} else {
+			cmds = append(cmds, p.IncrPercent(progressPercentPerTick))
+			m.progress = p
+			cmds = append(cmds, func() tea.Msg {
+				time.Sleep(progressTickDuration)
+				return progressTick{}
+			})
+		}
+		return m, tea.Batch(cmds...)
+	case progress.FrameMsg:
+		progressModel, cmd := m.progress.Update(msg)
+		cmds = append(cmds, cmd)
+		m.progress = progressModel.(progress.Model)
+		return m, tea.Batch(cmds...)
 	}
-	if m.view == treeView {
+
+	if !m.showProgress && m.view == treeView {
 		newTree, cmd := m.Tree.Update(msg)
 		m.Tree = newTree.(*TreeModel)
 		cmds = append(cmds, cmd)
@@ -196,6 +230,9 @@ func (m *RootModel) resizeElements() {
 
 func (m *RootModel) View() string {
 	var s string
+	if m.showProgress {
+		return m.progress.View()
+	}
 	m.detailsViewport.SetContent(m.Tree.CurNode.GetDetail())
 	m.treeViewport.SetContent(m.Tree.View())
 

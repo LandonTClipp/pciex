@@ -5,16 +5,16 @@ package main
 // You may also need to run `go mod tidy` to download bubbletea and its
 // dependencies.
 import (
-	"bytes"
-	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 
 	"github.com/LandonTClipp/pciex/models"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/chigopher/pathlib"
 	"gopkg.in/yaml.v2"
 )
 
@@ -45,25 +45,70 @@ type PCIElement struct {
 	Device string
 }
 
+type AdditionalDetails struct {
+	NumaNode     *int
+	LocalCPUList *string
+}
+
+func NewAdditionalDetailsFromSysfs(sysfsPath *pathlib.Path) (AdditionalDetails, error) {
+	d := AdditionalDetails{}
+	numa := sysfsPath.Join("numa_node")
+	b, err := numa.ReadFile()
+	if err != nil {
+		return d, fmt.Errorf("reading numa_node: %w", err)
+	}
+	numaInt, err := strconv.Atoi(strings.TrimSuffix(string(b), "\n"))
+	if err != nil {
+		return d, fmt.Errorf("parsing numa_node into int: %w", err)
+	}
+	d.NumaNode = &numaInt
+
+	localCPUList := sysfsPath.Join("local_cpulist")
+	cpuListBytes, err := localCPUList.ReadFile()
+	if err != nil {
+		return d, fmt.Errorf("reading local_cpulist: %w", err)
+	}
+	asStr := string(cpuListBytes)
+	d.LocalCPUList = &asStr
+
+	return d, nil
+}
+
 type Details struct {
-	Id            string
-	Class         string
-	Claimed       bool
-	Handle        string
-	Description   string
-	Product       string
-	Vendor        string
-	Physid        string
-	Businfo       string
-	Version       string
-	Width         int
-	Clock         int
-	Serial        string
-	Slot          string
-	Units         string
-	Size          int
-	Configuration map[string]any
-	Capabilities  map[string]any
+	AdditionalDetails // Details not provided by lshw that we need to scrape ourselves
+	Id                string
+	Class             string
+	Claimed           bool
+	Handle            string
+	Description       string
+	Product           string
+	Vendor            string
+	Physid            string
+	Businfo           string
+	Version           string
+	Width             int
+	Clock             int
+	Serial            string
+	Slot              string
+	Units             string
+	Size              int
+	Configuration     map[string]any
+	Capabilities      map[string]any
+}
+
+func (d *Details) GetAdditionalDetails() error {
+	addressSplit := strings.Split(d.Businfo, "@")
+	if len(addressSplit) != 2 {
+		return nil
+	}
+	address := addressSplit[1]
+	sysfsPath := pathlib.NewPath("/sys/bus/pci/devices/" + address)
+	details, err := NewAdditionalDetailsFromSysfs(sysfsPath)
+	if err != nil {
+		return err
+	}
+	d.AdditionalDetails = details
+	return nil
 }
 
 func (d Details) String() string {
@@ -92,6 +137,9 @@ func buildPCIETreeHelper(parent *models.Node, children []LshwElem) error {
 		panic("parent is nil")
 	}
 	for _, child := range children {
+		if err := child.Details.GetAdditionalDetails(); err != nil {
+			return fmt.Errorf("getting additional details after json unmarshal: %w", err)
+		}
 		out, err := yaml.Marshal(child.Details)
 		if err != nil {
 			return fmt.Errorf("unmarshalling yaml: %w", err)
@@ -104,7 +152,7 @@ func buildPCIETreeHelper(parent *models.Node, children []LshwElem) error {
 	return nil
 }
 
-func buildPCIETreeV2(tree *models.TreeModel) error {
+func buildPCIETree(tree *models.TreeModel) error {
 	cmd := exec.Command("/usr/bin/lshw", "-json")
 	out, err := cmd.Output()
 	if err != nil {
@@ -127,6 +175,9 @@ func buildPCIETreeV2(tree *models.TreeModel) error {
 		if !strings.HasPrefix(child.Id, "pci") {
 			continue
 		}
+		if err := child.Details.GetAdditionalDetails(); err != nil {
+			return fmt.Errorf("getting additional details after json unmarshal: %w", err)
+		}
 		out, err := yaml.Marshal(child.Details)
 		if err != nil {
 			return fmt.Errorf("unmarshalling yaml: %w", err)
@@ -135,37 +186,6 @@ func buildPCIETreeV2(tree *models.TreeModel) error {
 		if err := buildPCIETreeHelper(childNode, child.Children); err != nil {
 			return err
 		}
-	}
-	return nil
-}
-
-func buildPCIETree(tree *models.TreeModel) error {
-	cmd := exec.Command("/usr/bin/lspci", "-mm", "-nn", "-q", "-D", "-PP")
-	out, err := cmd.Output()
-	if err != nil {
-		return fmt.Errorf("reading command output: %w", err)
-	}
-
-	reader := csv.NewReader(bytes.NewReader(out))
-	reader.Comma = ' '
-	reader.FieldsPerRecord = -1
-	records, err := reader.ReadAll()
-	if err != nil {
-		fmt.Println(string(out))
-		return fmt.Errorf("reading CSV: %w", err)
-	}
-	for _, record := range records {
-		element := PCIElement{
-			Slot:   NewSlotFromString(record[0]),
-			Class:  record[1],
-			Vendor: record[2],
-			Device: record[3],
-		}
-		yamlRepr, err := yaml.Marshal(element)
-		if err != nil {
-			return fmt.Errorf("marshalling yaml: %w", err)
-		}
-		tree.Root.AddChild(element.Class, string(yamlRepr))
 	}
 	return nil
 }
@@ -179,7 +199,7 @@ func main() {
 	//	fmt.Printf("Error occurred: %v\n", err)
 	//	os.Exit(1)
 	//}
-	if err := buildPCIETreeV2(rootModel.Tree); err != nil {
+	if err := buildPCIETree(rootModel.Tree); err != nil {
 		fmt.Printf("Error occurred: %v\n", err)
 		os.Exit(1)
 	}
