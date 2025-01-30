@@ -2,6 +2,7 @@ package pcie
 
 import (
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 
@@ -18,21 +19,27 @@ func NewAdditionalDetailsFromSysfs(sysfsPath *pathlib.Path) (AdditionalDetails, 
 	numa := sysfsPath.Join("numa_node")
 	b, err := numa.ReadFile()
 	if err != nil {
-		return d, fmt.Errorf("reading numa_node: %w", err)
+		if !os.IsNotExist(err) {
+			return d, fmt.Errorf("reading numa_node: %w", err)
+		}
+	} else {
+		numaInt, err := strconv.Atoi(strings.TrimSuffix(string(b), "\n"))
+		if err != nil {
+			return d, fmt.Errorf("parsing numa_node into int: %w", err)
+		}
+		d.NumaNode = &numaInt
 	}
-	numaInt, err := strconv.Atoi(strings.TrimSuffix(string(b), "\n"))
-	if err != nil {
-		return d, fmt.Errorf("parsing numa_node into int: %w", err)
-	}
-	d.NumaNode = &numaInt
 
 	localCPUList := sysfsPath.Join("local_cpulist")
 	cpuListBytes, err := localCPUList.ReadFile()
 	if err != nil {
-		return d, fmt.Errorf("reading local_cpulist: %w", err)
+		if !os.IsNotExist(err) {
+			return d, fmt.Errorf("reading local_cpulist: %w", err)
+		}
+	} else {
+		asStr := string(cpuListBytes)
+		d.LocalCPUList = &asStr
 	}
-	asStr := string(cpuListBytes)
-	d.LocalCPUList = &asStr
 
 	return d, nil
 }
