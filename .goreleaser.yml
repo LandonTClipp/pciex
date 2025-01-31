@@ -1,0 +1,32 @@
+---
+project_name: pciex
+before:
+    hooks:
+      - go mod download
+builds:
+  - main: ./main.go
+    binary: pciex
+    goos:
+      - darwin
+      - linux
+      - windows
+    goarch:
+      - amd64
+      - arm64
+archives:
+  - name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{- title .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else if eq .Arch "386" }}i386
+      {{- else }}{{ .Arch }}{{ end }}
+    files:
+      - README.md
+      - LICENSE
+checksum:
+    name_template: "checksum.txt"
+snapshot:
+    name_template: "{{ .Tag }}-next"
+changelog:
+    sort: asc
+release:
+  make_latest: true
