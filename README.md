@@ -1,3 +1,5 @@
+This repo has been moved over to https://github.com/LambdaLabs/pciex.
+
 # pciex
 
 PCI Explorer is a PCIe topology explorer and visualizer. The generated tree can be visualized and each element inspected using a simple terminal UI designed with the bubbletea framework.
